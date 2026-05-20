@@ -83,8 +83,7 @@ body::before {
 #screen-role > * { position:relative; z-index:1; }
 
 /* ── Lobby ─────────────────────────────────────────────────────── */
-#screen-lobby { display:none; flex-direction:column; background:radial-gradient(ellipse at 50% 20%,#1a0f05,#0a0806); }
-#screen-lobby.active { display:flex; }
+#screen-lobby { background:radial-gradient(ellipse at 50% 20%,#1a0f05,#0a0806); }
 .lobby-body { flex:1; display:grid; grid-template-columns:1fr 320px; min-height:0; overflow:hidden; }
 .lobby-players { padding:1rem; display:flex; flex-direction:column; gap:.6rem; overflow-y:auto; border-right:1px solid var(--border); }
 .lobby-slot { padding:.6rem .8rem; border:1px solid var(--border); background:var(--panel); display:flex; align-items:center; gap:.8rem; }
@@ -571,29 +570,18 @@ body::before {
      ROLE SELECTION
 ══════════════════════════════════════ -->
 <div id="screen-role" class="screen active">
-  <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%,#1a0f05,#0a0806);z-index:0;"></div>
-  <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;gap:2rem;padding:2rem;">
-    <div>
-      <div class="role-title">ARKHAM ECHOES</div>
-      <div class="role-subtitle" style="margin-top:.5rem;">Eine Geschichte aus der Tiefe</div>
-      <div class="role-subtitle" style="font-size:.75rem;margin-top:.25rem;letter-spacing:.2em;">1930 · LOVECRAFTIAN HORROR · TEXT ADVENTURE</div>
-    </div>
+  <div style="position:relative;z-index:1;display:flex;align-items:center;justify-content:center;width:100%;height:100%;padding:2rem;">
     <div class="role-cards">
       <div class="role-card" onclick="chooseRole('narrator')">
         <div class="role-icon">📖</div>
         <div class="role-name">ERZÄHLER</div>
         <div class="role-desc">Du webst die Welt.<br>Räume, Texte, Geheimnisse —<br>alles liegt in deinen Händen.</div>
       </div>
-      <div class="role-divider" style="display:none;" id="role-divider"></div>
       <div class="role-card" onclick="chooseRole('player')">
         <div class="role-icon">🕯️</div>
         <div class="role-name">SPIELER</div>
         <div class="role-desc">Du bist die Figur.<br>Jede Entscheidung, jede Tür —<br>du trägst die Last.</div>
       </div>
-    </div>
-    <div style="font-family:var(--font-mono);font-size:.7rem;color:var(--dim);text-align:center;max-width:400px;line-height:1.6;">
-      Beide Spieler öffnen diese Datei im Browser.<br>
-      Erzähler startet zuerst und zeigt einen QR-Code.
     </div>
   </div>
 </div>
@@ -643,7 +631,7 @@ body::before {
 <!-- ══════════════════════════════════════
      LOBBY SCREEN
 ══════════════════════════════════════ -->
-<div id="screen-lobby">
+<div id="screen-lobby" class="screen">
   <div class="game-header">
     <div class="game-header-title">📖 ARKHAM ECHOES — LOBBY</div>
     <div style="font-family:var(--font-mono);font-size:.75rem;color:var(--dim);" id="lobby-status">Warte auf Spieler...</div>
@@ -1704,14 +1692,14 @@ function onNarratorConnected() {
   document.getElementById('lobby-code-display').textContent =
     document.getElementById('room-code-display')?.textContent || '------';
   initNarratorUI();
-  setTimeout(()=>window._3D?.initScene('narrator-3d-wrap'), 300);
+  init3DWhenReady('narrator-3d-wrap');
 }
 
 function onPlayerConnected() {
   showScreen('screen-lobby');
   document.getElementById('lobby-player-panel').style.display='block';
   buildLobbyCharGrid();
-  setTimeout(()=>window._3D?.initScene('player-3d-wrap'), 300);
+  init3DWhenReady('player-3d-wrap');
 }
 
 // ── Lobby UI ──────────────────────────────────────────────────────
@@ -2024,21 +2012,25 @@ function sendPrologue() {
     startColor = preset.color;
   }
   closeModal('modal-prologue');
-  // Intro senden
+
+  // ── Startraum SOFORT erstellen und Erzähler zum Spiel-Screen wechseln ──
+  const startId = createRoomData(locationName, startColor, 0, 0, {}, {N:true, O:true});
+  currentRoomId = startId;
+  enterRoom(startId);
+  initNarratorUI();
+  renderMap();
+  showScreen('screen-narrator');  // Sofort — nicht nach 17 Sekunden
+  init3DWhenReady('narrator-3d-wrap');
+  toast('Prolog läuft...');
+
+  // Intro-Zeilen zeitversetzt an Spieler senden
   send({type:'intro_start'});
   lines.forEach((line, i) => {
     setTimeout(() => send({type:'intro_line', text:line}), i * 2800);
   });
   setTimeout(() => {
     send({type:'intro_done'});
-    const startId = createRoomData(locationName, startColor, 0, 0, {}, {N:true, O:true});
-    currentRoomId = startId;
-    // Startraum OHNE Items senden (kommen erst per Umschauen)
-    enterRoom(startId);
-    initNarratorUI();
-    renderMap();
-    toast('Prolog gesendet. Spiel läuft.');
-  }, lines.length * 2800 + 500);
+  }, lines.length * 2800 + 300);
 }
 
 // ── Umschauen-System ──────────────────────────────────────────────
@@ -2780,15 +2772,17 @@ function handlePlayerMessage(msg) {
       showScreen('screen-player');
       break;
     case 'intro_start':
-      introShowing=true;
-      addLogLine('', 'separator');
+      introShowing = true;
+      showScreen('screen-player');        // Sofort wechseln — Spieler sieht Intro-Text
+      init3DWhenReady('player-3d-wrap');
+      addLogLine('— — —', 'separator');
       break;
     case 'intro_line':
       addLogLine(msg.text, 'current');
       break;
     case 'intro_done':
-      introShowing=false;
-      showScreen('screen-player');
+      introShowing = false;
+      // Screen ist bereits screen-player (seit intro_start)
       break;
     case 'map_update':
       playerRooms[msg.roomId]={...playerRooms[msg.roomId],...msg,id:msg.roomId};
@@ -3276,8 +3270,32 @@ function updatePlayerSan() {
 // ════════════════════════════════════════════════════════════════════
 //  UI HELPERS
 // ════════════════════════════════════════════════════════════════════
+// ── 3D: initialisieren sobald Modul bereit ────────────────────────
+function init3DWhenReady(wrapperId) {
+  // Polling alle 250ms – vermeidet Race Condition mit async ES-Modul
+  let attempts = 0;
+  const poll = () => {
+    if (window._3D) {
+      window._3D.initScene(wrapperId);
+      if (typeof rooms !== 'undefined') {
+        window._arkham_rooms = rooms;
+        Object.values(rooms).forEach(r => {
+          if (r.active) window._3D.addOrUpdateRoom(r.id, r.gx, r.gy, r.color, r.name, r.discovered);
+        });
+      }
+    } else if (attempts++ < 40) {
+      setTimeout(poll, 250);
+    } else {
+      console.warn('[3D] Three.js Modul nicht geladen nach 10s');
+    }
+  };
+  poll();
+}
+
 function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  // Lobby extra behandeln da sie eigene CSS-Klasse hat
+  document.getElementById('screen-lobby')?.classList.remove('active');
   document.getElementById(id)?.classList.add('active');
 }
 
@@ -3645,6 +3663,9 @@ window._3D = {
     }
   }
 };
+// Signal dass 3D bereit ist
+window.dispatchEvent(new Event('3d-ready'));
+console.log('[3D] Arkham Echoes 3D engine ready');
 </script>
 
 </body>
